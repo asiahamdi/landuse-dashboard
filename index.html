@@ -8,8 +8,10 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  
+  <!-- GeoRaster libraries -->
+  <script src="https://unpkg.com/georaster"></script>
+  <script src="https://unpkg.com/georaster-layer-for-leaflet"></script>
 
   <style>
     body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background: #0b1020; color: #e6e6ee; }
@@ -24,110 +26,84 @@
   <div class="max-w-6xl mx-auto space-y-6">
     <header class="mb-4">
       <h1 class="text-2xl font-bold text-white">Khartoum LULC Dashboard</h1>
-      <p class="text-sm text-gray-300 mt-1">عرض تغطية الأراضي لعامي 2023 و2025</p>
+      <p class="text-sm text-gray-300 mt-1">خريطة تغطية الأراضي من GeoTIFF</p>
     </header>
 
     <main class="grid grid-cols-12 gap-6">
       <!-- الخريطة -->
-      <section class="col-span-12 lg:col-span-7 card p-4">
+      <section class="col-span-12 lg:col-span-8 card p-4">
         <h2 class="text-white font-semibold mb-3">الخريطة</h2>
         <div id="map"></div>
       </section>
 
-      <!-- Summary وChart وLegend -->
-      <aside class="col-span-12 lg:col-span-5 space-y-4">
-        <div class="card p-4">
-          <h3 class="font-semibold text-white mb-3">Summary</h3>
-          <div id="summaryText" class="text-gray-200 text-sm leading-relaxed"></div>
-        </div>
-
-        <div class="card p-4">
-          <h3 class="font-semibold text-white mb-3">Comparison Chart (2023 vs 2025)</h3>
-          <canvas id="compareChart" height="220"></canvas>
-        </div>
-
+      <!-- Legend -->
+      <aside class="col-span-12 lg:col-span-4">
         <div class="card p-4">
           <h3 class="font-semibold text-white mb-3">Legend</h3>
-          <div class="text-sm text-gray-200">
-            <div><span class="legend-swatch" style="background:#1f78b4"></span> Water</div>
-            <div><span class="legend-swatch" style="background:#33a02c"></span> Vegetation</div>
-            <div><span class="legend-swatch" style="background:#e31a1c"></span> Urban</div>
-            <div><span class="legend-swatch" style="background:#ff7f00"></span> Bare / Other</div>
-          </div>
+          <div id="legendContainer" class="text-sm text-gray-200 space-y-1"></div>
         </div>
       </aside>
     </main>
 
     <footer class="text-xs text-gray-400 text-center mt-6">
-      Built for <strong>Asia Hamdi</strong>. Map data: <span style="font-size:10px;">Google Dynamic World</span>
+      Built for <strong>Asia Hamdi</strong>. Map data: <span style="font-size:10px;">Dynamic World / GeoTIFF</span>
     </footer>
   </div>
 
   <script>
-    // ---------- الخريطة ----------
-    const map = L.map('map', { center:[15.5007,32.5599], zoom:10 });
-    const darkBasemap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', { attribution:'&copy; CartoDB', maxZoom:19 }).addTo(map);
+    // ---------- Map ----------
+    const map = L.map('map', { center:[15.55,32.55], zoom:11 });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', { attribution:'&copy; CartoDB', maxZoom:19 }).addTo(map);
 
-    // ---------- الألوان حسب الفئة ----------
-    const classColors = { "Water":"#1f78b4", "Vegetation":"#33a02c", "Urban":"#e31a1c", "Bare":"#ff7f00" };
-
-    // ---------- بيانات تجريبية GeoJSON ----------
-    const geo2023 = {
-      "type":"FeatureCollection",
-      "features":[
-        {"type":"Feature","properties":{"class":"Urban","areaPct":28},"geometry":{"type":"Polygon","coordinates":[[[32.53,15.52],[32.60,15.52],[32.60,15.48],[32.53,15.48],[32.53,15.52]]]}},
-        {"type":"Feature","properties":{"class":"Vegetation","areaPct":42},"geometry":{"type":"Polygon","coordinates":[[[32.48,15.55],[32.62,15.55],[32.62,15.52],[32.48,15.52],[32.48,15.55]]]}},
-        {"type":"Feature","properties":{"class":"Water","areaPct":10},"geometry":{"type":"Polygon","coordinates":[[[32.56,15.43],[32.60,15.43],[32.60,15.40],[32.56,15.40],[32.56,15.43]]]}},
-        {"type":"Feature","properties":{"class":"Bare","areaPct":20},"geometry":{"type":"Polygon","coordinates":[[[32.42,15.50],[32.48,15.50],[32.48,15.46],[32.42,15.46],[32.42,15.50]]]}}
-      ]
+    // ---------- Dynamic World Colors ----------
+    const classColors = {
+      "Water": "#419BDF",
+      "Trees": "#397D49",
+      "Grass": "#88B053",
+      "Flooded vegetation": "#7A87C6",
+      "Crops": "#E49635",
+      "Shrub and scrub": "#DFC35A",
+      "Built": "#C4281B",
+      "Bare": "#A59B8F",
+      "Snow and ice": "#B39FE1"
     };
 
-    const geo2025 = {
-      "type":"FeatureCollection",
-      "features":[
-        {"type":"Feature","properties":{"class":"Urban","areaPct":36},"geometry":{"type":"Polygon","coordinates":[[[32.53,15.52],[32.64,15.52],[32.64,15.46],[32.53,15.46],[32.53,15.52]]]}},
-        {"type":"Feature","properties":{"class":"Vegetation","areaPct":34},"geometry":{"type":"Polygon","coordinates":[[[32.48,15.55],[32.60,15.55],[32.60,15.52],[32.48,15.52],[32.48,15.55]]]}},
-        {"type":"Feature","properties":{"class":"Water","areaPct":8},"geometry":{"type":"Polygon","coordinates":[[[32.56,15.43],[32.60,15.43],[32.60,15.40],[32.56,15.40],[32.56,15.43]]]}},
-        {"type":"Feature","properties":{"class":"Bare","areaPct":22},"geometry":{"type":"Polygon","coordinates":[[[32.42,15.50],[32.48,15.50],[32.48,15.46],[32.42,15.46],[32.42,15.50]]]}}
-      ]
-    };
-
-    function styleByFeature(f){ return { color:"#111", weight:1, fillColor: classColors[f.properties.class]||"#999", fillOpacity:0.6 }; }
-    function onEachFeature(feature, layer){ layer.bindPopup(`<strong>${feature.properties.class}</strong><br>Area %: ${feature.properties.areaPct}%`); }
-
-    const layer2023 = L.geoJSON(geo2023,{style:styleByFeature,onEachFeature}).addTo(map);
-    const layer2025 = L.geoJSON(geo2025,{style:styleByFeature,onEachFeature});
-
-    L.control.layers(null, {"LULC 2023":layer2023,"LULC 2025":layer2025},{collapsed:false,position:'topright'}).addTo(map);
-
-    // ---------- Chart.js ----------
-    const ctx = document.getElementById('compareChart').getContext('2d');
-    function getClassPercentages(geo){
-      const totals={"Water":0,"Vegetation":0,"Urban":0,"Bare":0};
-      geo.features.forEach(f=>{ totals[f.properties.class]=(totals[f.properties.class]||0)+f.properties.areaPct; });
-      return [totals.Water,totals.Vegetation,totals.Urban,totals.Bare];
-    }
-
-    let compareChart = new Chart(ctx,{
-      type:'bar',
-      data:{
-        labels:['Water','Vegetation','Urban','Bare'],
-        datasets:[
-          { label:'2023', data:getClassPercentages(geo2023), backgroundColor:['#1f78b4','#33a02c','#e31a1c','#ff7f00'], borderRadius:6 },
-          { label:'2025', data:getClassPercentages(geo2025), backgroundColor:['rgba(31,120,180,0.6)','rgba(51,160,44,0.6)','rgba(227,26,28,0.6)','rgba(255,127,0,0.6)'], borderRadius:6 }
-        ]
-      },
-      options:{ responsive:true, plugins:{ legend:{ labels:{ color:'#e6e6ee' } } }, scales:{ x:{ ticks:{ color:'#e6e6ee' } }, y:{ ticks:{ color:'#e6e6ee' }, beginAtZero:true } } }
+    // ---------- Legend ----------
+    const legendContainer = document.getElementById('legendContainer');
+    Object.keys(classColors).forEach(cls => {
+      const div = document.createElement('div');
+      div.innerHTML = `<span class="legend-swatch" style="background:${classColors[cls]}"></span> ${cls}`;
+      legendContainer.appendChild(div);
     });
 
-    // ---------- Summary ----------
-    function updateSummary(){
-      const p2023=getClassPercentages(geo2023), p2025=getClassPercentages(geo2025);
-      const diff=p2025.map((v,i)=>(v-p2023[i]).toFixed(1));
-      const labels=['Water','Vegetation','Urban','Bare'];
-      document.getElementById('summaryText').innerHTML=labels.map((lab,i)=>`<div><strong>${lab}:</strong> ${p2023[i]}% → ${p2025[i]}% <span style="color:${diff[i]>=0?'#4ade80':'#fb7185'}">(${diff[i]>=0?'+':''}${diff[i]}%)</span></div>`).join('');
-    }
-    updateSummary();
+    // ---------- Load GeoTIFF ----------
+    fetch("lulc_khartoum.tif") // ضع هنا مسار GeoTIFF
+      .then(response => response.arrayBuffer())
+      .then(buffer => parseGeoraster(buffer))
+      .then(georaster => {
+        const layer = new GeoRasterLayer({
+          georaster: georaster,
+          opacity: 0.7,
+          pixelValuesToColorFn: values => {
+            const val = values[0]; // قيمة البكسل
+            // استبدل هذه القيم بالقيم الحقيقية في GeoTIFF الخاص بك
+            switch(val){
+              case 1: return classColors["Water"];
+              case 2: return classColors["Trees"];
+              case 3: return classColors["Grass"];
+              case 4: return classColors["Flooded vegetation"];
+              case 5: return classColors["Crops"];
+              case 6: return classColors["Shrub and scrub"];
+              case 7: return classColors["Built"];
+              case 8: return classColors["Bare"];
+              case 9: return classColors["Snow and ice"];
+              default: return "#00000000"; // شفاف لأي قيمة أخرى
+            }
+          }
+        });
+        layer.addTo(map);
+        map.fitBounds(layer.getBounds());
+      });
   </script>
 </body>
 </html>
